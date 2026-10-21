@@ -1,0 +1,127 @@
+@startuml
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+skinparam ResponseMessageBelowArrow true
+
+title Сиквенс-диаграмма СМО: Вариант 18 (ИБ | ИЗ2 | ПЗ1 | Д1ОЗ1 | Д1ОО1 | Д2П2 | Д2Б4 | ОР1 | ОД3)
+
+box "Генерация событий" #E8F8F5
+	participant "Календарь событий\n(EventEngine)" as Calendar
+	participant "Источники И1..И3\n(ИБ, закон ИЗ2)" as Source
+end box
+
+box "Шлюз постановки" #EBF5FB
+	participant "Диспетчер постановки\n(ДП)" as DP
+	participant "Кольцевой буфер\n(RingBuffer N ячеек)" as Buffer
+end box
+
+box "Шлюз выбора и обслуживания" #FEF9E7
+	participant "Диспетчер выбора\n(ДВ)" as DV
+	participant "Пул приборов\n(DevicePool M ядер)" as Pool
+	participant "Ускоритель NPU_k\n(Прибор, закон ПЗ1)" as Device
+end box
+
+participant "Сборщик статистики\n(StatsCollector, ОР1)" as Stats
+
+== Триггерное событие: Генерация новой заявки ==
+/'1'/ Calendar -> Calendar: Наступление момента T_gen (наименьшее время в календаре)
+/'2'/ Calendar -> Source: getNextEvent()
+/'3'/ Source -> Source: Расчет времени следующего кадра по закону ИЗ2 (равномерный)
+/'4'/ Source -> DP: processIncomingTask(task[id, source_id, T_gen])
+activate DP
+
+	/'5'/ DP -> Buffer: checkCapacity()
+	activate Buffer
+		/'6'/ Buffer --> DP: capacityStatus (isFull: boolean, freeSlotsCount)
+	deactivate Buffer
+
+	alt Сценарий 1: В буфере есть свободное место (Дисциплина Д1ОЗ1 — запись по кольцу)
+		/'7'/ DP -> Buffer: putTaskByRing(task, pointerUB)
+		activate Buffer
+			note over Buffer
+				Д1ОЗ1: Циклический поиск первого свободного слота
+				начиная с указателя УБ.
+				Запись заявки в слот[index].
+				Сдвиг указателя: УБ = (index + 1) mod N
+			end note
+			/'8'/ Buffer --> DP: success(slotIndex, newPointerUB)
+		deactivate Buffer
+		/'9'/ DP -> Stats: registerBufferEnqueued(task, T_gen)
+		/'10'/ DP --> Calendar: eventHandled(TASK_ENQUEUED)
+
+	else Сценарий 2: Буфер полон (Дисциплина Д1ОО1 — отказ под указателем)
+		note over DP, Buffer
+			Все слоты 0..N-1 заняты. Полный круг поиска вернулся к УБ.
+		end note
+		/'11'/ DP -> Buffer: dropAndReplaceUnderPointer(task, pointerUB)
+		activate Buffer
+			/'12'/ Buffer -> Buffer: Извлечь старую заявку oldTask = slots[pointerUB]
+			/'13'/ Buffer -> Buffer: slots[pointerUB] = task (запись новой заявки)
+			/'14'/ Buffer -> Buffer: Сдвиг указателя: УБ = (pointerUB + 1) mod N
+			/'15'/ Buffer --> DP: droppedTaskInfo(oldTask, newPointerUB)
+		deactivate Buffer
+
+		/'16'/ DP -> Stats: registerTaskDrop(oldTask, T_gen, REASON_BUFFER_OVERFLOW)
+		/'17'/ DP -> Stats: registerBufferEnqueued(task, T_gen)
+		/'18'/ DP --> Calendar: eventHandled(TASK_DROPPED_AND_REPLACED)
+	end
+deactivate DP
+
+== Триггерное событие: Освобождение вычислителя NPU (Конец обслуживания) ==
+/'19'/ Calendar -> Calendar: Наступление момента T_free (завершение инференса на приборе)
+/'20'/ Calendar -> Device: checkServiceComplete()
+activate Device
+	/'21'/ Device -> Device: taskCompleted = currentTask
+	/'22'/ Device -> Device: isBusy = false
+	/'23'/ Device --> DV: onDeviceAvailable(deviceId, taskCompleted, T_free)
+deactivate Device
+activate DV
+
+	/'24'/ DV -> Stats: registerTaskCompleted(taskCompleted, T_free)
+	/'25'/ DV -> Buffer: getPendingTasksCount()
+	activate Buffer
+		/'26'/ Buffer --> DV: pendingCount
+	deactivate Buffer
+
+	alt Буфер не пуст: Выбор заявки и назначение на прибор
+		/'27'/ DV -> Buffer: extractTaskByPriority()
+		activate Buffer
+			note over Buffer
+				Д2Б4: Приоритет по номеру источника (И1 > И2 > И3).
+				Поиск заявок наивысшего доступного приоритета.
+				При равенстве приоритетов: выбор по LIFO (наибольшее T_gen).
+				Извлечение выбранной заявки из слота.
+			end note
+			/'28'/ Buffer --> DV: taskToProcess
+		deactivate Buffer
+
+		/'29'/ DV -> Pool: selectDeviceRoundRobin(pointerUP)
+		activate Pool
+			note over Pool
+				Д2П2: Выбор свободного прибора по кольцу.
+				Поиск свободного NPU начиная с указателя УП.
+				Выбран прибор NPU_k.
+				Сдвиг указателя: УП = (k + 1) mod M.
+			end note
+			/'30'/ Pool --> DV: targetDeviceRef(NPU_k, newPointerUP)
+		deactivate Pool
+
+		/'31'/ DV -> Device: assignTask(taskToProcess, T_free)
+		activate Device
+			/'32'/ Device -> Device: isBusy = true
+			/'33'/ Device -> Device: Расчет длительности T_serv по закону ПЗ1 (экспоненциальный)
+			/'34'/ Device -> Device: T_finish = T_free + T_serv
+			/'35'/ Device --> DV: taskAccepted(T_finish)
+		deactivate Device
+
+		/'36'/ DV -> Calendar: scheduleEvent(EVENT_DEVICE_FREE, T_finish, deviceId)
+		/'37'/ DV -> Stats: registerServiceStart(taskToProcess, deviceId, T_free)
+		/'38'/ DV --> Calendar: eventHandled(TASK_ASSIGNED_TO_DEVICE)
+
+	else Буфер пуст (Краевой кейс / Ожидание)
+		/'39'/ DV -> Pool: markDeviceIdle(deviceId)
+		/'40'/ DV --> Calendar: eventHandled(DEVICE_SET_IDLE)
+	end
+deactivate DV
+@enduml

@@ -1,0 +1,198 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+
+title Диаграмма классов СМО: Вариант 18 (Кластер нейросетевого инференса)
+
+enum TaskStatus {
+GENERATED
+IN_BUFFER
+IN_SERVICE
+COMPLETED
+DROPPED
+}
+
+enum EventType {
+TASK_GENERATED
+DEVICE_FREED
+SIMULATION_END
+}
+
+class InferenceTask {
+- id: int
+- sourceId: int
+- priority: int
+- generationTime: double
+- bufferEntryTime: double
+- serviceStartTime: double
+- serviceEndTime: double
+- status: TaskStatus
++ <<create>> InferenceTask(id: int, sourceId: int, priority: int, genTime: double)
++ getId(): int
++ getSourceId(): int
++ getPriority(): int
++ getGenerationTime(): double
++ setBufferEntryTime(t: double): void
++ setServiceStartTime(t: double): void
++ setServiceEndTime(t: double): void
++ setStatus(status: TaskStatus): void
++ getWaitTime(): double
++ getServiceTime(): double
++ getTotalTime(): double
+}
+
+class Event {
+- eventTime: double
+- type: EventType
+- entityId: int
+- taskRef: InferenceTask
++ <<create>> Event(time: double, type: EventType, entityId: int, task: InferenceTask)
++ getEventTime(): double
++ getType(): EventType
++ getEntityId(): int
++ getTask(): InferenceTask
+}
+
+class Source {
+- id: int
+- priority: int
+- rangeA: double
+- rangeB: double
+- generatedTasksCount: int
++ <<create>> Source(id: int, priority: int, a: double, b: double)
++ generateTask(currentTime: double): InferenceTask
++ calculateNextInterval(): double
++ getId(): int
++ getPriority(): int
++ getGeneratedCount(): int
+}
+
+class BufferSlot {
+- slotIndex: int
+- isOccupied: boolean
+- task: InferenceTask
++ <<create>> BufferSlot(index: int)
++ put(task: InferenceTask): void
++ extract(): InferenceTask
++ isFree(): boolean
++ getTask(): InferenceTask
++ clear(): void
+}
+
+class RingBuffer {
+- capacity: int
+- pointerUB: int
+- slots: List<BufferSlot>
++ <<create>> RingBuffer(capacity: int)
++ putByRing(task: InferenceTask): int
++ dropAndReplaceUnderPointer(task: InferenceTask): InferenceTask
++ extractByPriority(): InferenceTask
++ isFull(): boolean
++ isEmpty(): boolean
++ getPointerUB(): int
++ getOccupiedCount(): int
++ getSlotsSnapshot(): List<BufferSlot>
+}
+
+class Device {
+- id: int
+- isBusy: boolean
+- lambdaRate: double
+- totalBusyTime: double
+- currentTask: InferenceTask
++ <<create>> Device(id: int, lambdaRate: double)
++ assignTask(task: InferenceTask, currentTime: double): double
++ completeService(): InferenceTask
++ isFree(): boolean
++ getId(): int
++ getTotalBusyTime(): double
++ getCurrentTask(): InferenceTask
+}
+
+class DevicePool {
+- devices: List<Device>
+- pointerUP: int
++ <<create>> DevicePool(devicesCount: int, lambdaRate: double)
++ selectFreeDeviceRoundRobin(): Device
++ hasFreeDevice(): boolean
++ getPointerUP(): int
++ getDevices(): List<Device>
++ getDeviceById(id: int): Device
+}
+
+class InsertionDispatcher {
+- buffer: RingBuffer
+- stats: StatisticsCollector
++ <<create>> InsertionDispatcher(buffer: RingBuffer, stats: StatisticsCollector)
++ processIncomingTask(task: InferenceTask, currentTime: double): boolean
+}
+
+class SelectionDispatcher {
+- buffer: RingBuffer
+- devicePool: DevicePool
+- stats: StatisticsCollector
++ <<create>> SelectionDispatcher(buf: RingBuffer, pool: DevicePool, stats: StatisticsCollector)
++ onDeviceFreed(deviceId: int, currentTime: double): Event
+}
+
+class EventCalendar {
+- currentTime: double
+- events: PriorityQueue<Event>
++ <<create>> EventCalendar()
++ scheduleEvent(event: Event): void
++ pollNextEvent(): Event
++ hasEvents(): boolean
++ getCurrentTime(): double
+}
+
+class StatisticsCollector {
+- totalGenerated: Map<int, int>
+- totalDropped: Map<int, int>
+- totalCompleted: Map<int, int>
+- waitTimes: Map<int, List<double>>
+- serviceTimes: Map<int, List<double>>
++ registerGeneration(sourceId: int): void
++ registerDrop(task: InferenceTask, time: double): void
++ registerCompletion(task: InferenceTask, time: double): void
++ registerDeviceWork(deviceId: int, duration: double): void
++ printStepState(calendar: EventCalendar, buf: RingBuffer, pool: DevicePool): void
++ generateReportTable(totalSimTime: double): void
+}
+
+class SimulationController {
+- calendar: EventCalendar
+- sources: List<Source>
+- insertionDispatcher: InsertionDispatcher
+- selectionDispatcher: SelectionDispatcher
+- buffer: RingBuffer
+- devicePool: DevicePool
+- stats: StatisticsCollector
+- maxRequests: int
++ <<create>> SimulationController(config: SimulationConfig)
++ runStepByStep(): void
++ runAuto(): void
+}
+
+' Связи между компонентами
+SimulationController *-- EventCalendar
+SimulationController *-- RingBuffer
+SimulationController *-- DevicePool
+SimulationController *-- InsertionDispatcher
+SimulationController *-- SelectionDispatcher
+SimulationController *-- StatisticsCollector
+SimulationController o-- Source
+
+RingBuffer *-- BufferSlot
+BufferSlot o-- InferenceTask
+DevicePool *-- Device
+Device o-- InferenceTask
+
+/'1'/ InsertionDispatcher --> RingBuffer : управляет (Д1ОЗ1, Д1ОО1)
+/'2'/ InsertionDispatcher --> StatisticsCollector : логирует отказы
+/'3'/ SelectionDispatcher --> RingBuffer : извлекает (Д2Б4)
+/'4'/ SelectionDispatcher --> DevicePool : опрашивает (Д2П2)
+/'5'/ SelectionDispatcher --> StatisticsCollector : логирует статусы
+
+EventCalendar o-- Event
+Event o-- InferenceTask
+@enduml
