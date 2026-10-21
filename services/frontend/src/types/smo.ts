@@ -66,6 +66,34 @@ export interface DeviceStat {
 export interface AutoResult {
   target_n: number
   total_time: number
+  buffer_mode?: string
   source_stats: SourceStat[]
   device_stats: DeviceStat[]
+}
+
+export interface ExperimentRun {
+  devices_count: number
+  buffer_cap: number
+  buffer_mode: string
+  target_n: number
+  total_time: number
+  p_otk: number
+  t_stay: number
+  k_isp: number
+  load_rho: number
+  is_optimal: boolean
+  cost: number
+}
+
+export interface ExperimentResult {
+  runs: ExperimentRun[]
+  optimal_config: ExperimentRun | null
+  recommendation: string
+}
+
+export interface ExperimentParams {
+  target_n?: number
+  device_options?: number[]
+  buffer_options?: number[]
+  modes?: string[]
 }

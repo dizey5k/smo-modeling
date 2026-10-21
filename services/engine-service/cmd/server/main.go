@@ -27,6 +27,7 @@ func main() {
 	http.HandleFunc("/api/init", api.WithLogger(handler.HandleInit))
 	http.HandleFunc("/api/step", api.WithLogger(handler.HandleStep))
 	http.HandleFunc("/api/auto", api.WithLogger(handler.HandleAuto))
+	http.HandleFunc("/api/experiment", api.WithLogger(handler.HandleExperiment))
 
 	log.Println("SMO Engine Service started on :8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {

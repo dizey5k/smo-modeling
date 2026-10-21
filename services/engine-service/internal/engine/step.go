@@ -40,7 +40,6 @@ func (se *SimulationEngine) handleTaskGenerated(srcID int) string {
 	}
 	se.Tasks[task.ID] = task
 
-	// Планируем следующую генерацию источника по ИЗ2 через микросервис generator-service
 	for _, s := range se.Config.Sources {
 		if s.ID == srcID {
 			nextInterval := se.GenClient.GetUniform(s.RangeA, s.RangeB)
@@ -53,7 +52,6 @@ func (se *SimulationEngine) handleTaskGenerated(srcID int) string {
 		}
 	}
 
-	// Постановка в буфер (Д1ОЗ1 / Д1ОО1)
 	dropped, slot := se.Buffer.PutTask(task, se.CurrentTime)
 	var desc string
 	if dropped != nil {
@@ -62,8 +60,8 @@ func (se *SimulationEngine) handleTaskGenerated(srcID int) string {
 		desc = fmt.Sprintf("Генерация И%d (#%d). Буфер полон: выбит #%d под УБ. Новый в слоте %d.",
 			srcID, task.ID, dropped.ID, slot)
 	} else {
-		desc = fmt.Sprintf("Генерация И%d (#%d). Записан в слот %d (УБ=%d).",
-			srcID, task.ID, slot, se.Buffer.GetPointer())
+		desc = fmt.Sprintf("Генерация И%d (#%d). Записан в слот %d.",
+			srcID, task.ID, slot)
 	}
 
 	if dispatchMsg := se.tryDispatch(); dispatchMsg != "" {
@@ -121,7 +119,6 @@ func (se *SimulationEngine) tryDispatch() string {
 	task.ServiceStartTime = se.CurrentTime
 	task.Status = model.StatusInService
 
-	// Время инференса по закону ПЗ1 генерируется микросервисом generator-service
 	servTime := se.GenClient.GetExponential(se.Pool.MuRate)
 	se.ScheduleEvent(model.Event{
 		Time:     se.CurrentTime + servTime,

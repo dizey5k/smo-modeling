@@ -4,11 +4,18 @@ import type { AutoResult } from '../types/smo'
 export const AutoTable: React.FC<{ result: AutoResult }> = ({ result }) => {
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-[#1B2927] bg-[#111A19] p-4">
+      <div className="rounded-xl border border-slate-800 bg-[#121820] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[#40C9A2]">
-            Таблица 1. Характеристики источников
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[#40C9A2]">
+              Таблица 1. Характеристики источников (ОР1)
+            </h3>
+            <span className="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-[#A3F7B5] border border-slate-700">
+              {result.buffer_mode === 'ZONED'
+                ? 'Буфер: ЗОННЫЙ'
+                : 'Буфер: КОЛЬЦЕВОЙ'}
+            </span>
+          </div>
           <span className="font-mono text-xs text-[#E5F9E0]/70">
             N = <strong className="text-[#E5F9E0]">{result.target_n}</strong> |
             T = {result.total_time.toFixed(2)}
@@ -59,9 +66,9 @@ export const AutoTable: React.FC<{ result: AutoResult }> = ({ result }) => {
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#1B2927] bg-[#111A19] p-4">
+      <div className="rounded-xl border border-slate-800 bg-[#121820] p-4">
         <h3 className="mb-3 text-sm font-semibold text-[#2F9C95]">
-          Таблица 2. Характеристики приборов
+          Таблица 2. Характеристики приборов (ОР1)
         </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left font-mono text-xs">

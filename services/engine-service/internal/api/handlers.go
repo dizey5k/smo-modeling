@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 
@@ -24,9 +23,16 @@ func (h *ServerHandler) HandleInit(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	var cfg model.SimulationConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil || len(cfg.Sources) == 0 {
-		cfg = h.defaultCfg
+	cfg := h.defaultCfg
+	if r.Body != nil {
+		var userCfg model.SimulationConfig
+		if err := json.NewDecoder(r.Body).Decode(&userCfg); err == nil {
+			if len(userCfg.Sources) > 0 {
+				cfg = userCfg
+			} else if userCfg.BufferMode != "" {
+				cfg.BufferMode = userCfg.BufferMode
+			}
+		}
 	}
 
 	h.engine = engine.NewSimulationEngine(cfg)
@@ -45,20 +51,47 @@ func (h *ServerHandler) HandleStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := h.engine.Step()
-	log.Printf("[STEP] T=%.4f | Занято слотов: %d | Действие: %s",
-		state.CurrentTime, state.TotalGen-state.TotalDone-state.TotalDrop, state.LastAction)
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(state)
 }
 
 func (h *ServerHandler) HandleAuto(w http.ResponseWriter, r *http.Request) {
-	var cfg model.SimulationConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil || len(cfg.Sources) == 0 {
-		cfg = h.defaultCfg
+	cfg := h.defaultCfg
+	if r.Body != nil {
+		var userCfg model.SimulationConfig
+		if err := json.NewDecoder(r.Body).Decode(&userCfg); err == nil {
+			if len(userCfg.Sources) > 0 {
+				cfg = userCfg
+			} else if userCfg.BufferMode != "" {
+				cfg.BufferMode = userCfg.BufferMode
+			}
+		}
 	}
 
 	results := engine.RunAutoSimulation(cfg)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func (h *ServerHandler) HandleExperiment(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		model.SimulationConfig
+		Experiment model.ExperimentRequest `json:"experiment"`
+	}
+
+	cfg := h.defaultCfg
+	expReq := model.ExperimentRequest{}
+
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if len(req.Sources) > 0 {
+				cfg = req.SimulationConfig
+			}
+			expReq = req.Experiment
+		}
+	}
+
+	results := engine.RunGridSearch(cfg, expReq)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }

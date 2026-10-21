@@ -1,5 +1,10 @@
 import { apiClient } from './client'
-import type { SimulationState, AutoResult } from '../types/smo'
+import type {
+  SimulationState,
+  AutoResult,
+  ExperimentResult,
+  ExperimentParams,
+} from '../types/smo'
 
 export const simulationApi = {
   init: async (config?: unknown): Promise<SimulationState> => {
@@ -17,6 +22,15 @@ export const simulationApi = {
 
   auto: async (config?: unknown): Promise<AutoResult> => {
     const { data } = await apiClient.post<AutoResult>('/auto', config ?? {})
+    return data
+  },
+
+  experiment: async (params?: ExperimentParams): Promise<ExperimentResult> => {
+    const { data } = await apiClient.post<ExperimentResult>(
+      '/experiment',
+      { experiment: params ?? {} },
+      { timeout: 60000 },
+    )
     return data
   },
 }

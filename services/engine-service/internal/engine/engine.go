@@ -11,9 +11,9 @@ type SimulationEngine struct {
 	Config      model.SimulationConfig
 	CurrentTime float64
 	Calendar    []model.Event
-	Buffer      *RingBuffer
+	Buffer      BufferInterface // Кольцевой или Зонный
 	Pool        *DevicePool
-	GenClient   *client.GeneratorClient
+	GenClient   *client.GeneratorClient // Клиент микросервиса generator-service
 	Tasks       map[int]*model.InferenceTask
 	TaskSeq     int
 
@@ -32,9 +32,16 @@ type SimulationEngine struct {
 func NewSimulationEngine(cfg model.SimulationConfig) *SimulationEngine {
 	genClient := client.NewGeneratorClient()
 
+	var buf BufferInterface
+	if cfg.BufferMode == "ZONED" {
+		buf = NewZonedBuffer(cfg.BufferCap, cfg.SourcesCount)
+	} else {
+		buf = NewRingBuffer(cfg.BufferCap)
+	}
+
 	se := &SimulationEngine{
 		Config:          cfg,
-		Buffer:          NewRingBuffer(cfg.BufferCap),
+		Buffer:          buf,
 		Pool:            NewDevicePool(cfg.DevicesCount, cfg.MuRate),
 		GenClient:       genClient,
 		Tasks:           make(map[int]*model.InferenceTask),
@@ -46,7 +53,7 @@ func NewSimulationEngine(cfg model.SimulationConfig) *SimulationEngine {
 		StayDurations:   make(map[int][]float64),
 	}
 
-	// ИЗ2: равномерный закон
+	// Генерация первых событий от источников через микросервис (ИЗ2: равномерный)
 	for _, src := range cfg.Sources {
 		interval := se.GenClient.GetUniform(src.RangeA, src.RangeB)
 		se.ScheduleEvent(model.Event{
