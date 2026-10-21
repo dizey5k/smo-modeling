@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  generator-service:
+    build:
+      context: ./services/generator-service
+      dockerfile: Dockerfile
+    container_name: smo-generator
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks:
+      - smo-network
+
+  engine-service:
+    build:
+      context: ./services/engine-service
+      dockerfile: Dockerfile
+    container_name: smo-engine
+    ports:
+      - "8080:8080"
+    environment:
+      - GENERATOR_SERVICE_URL=http://generator-service:8081
+    depends_on:
+      - generator-service
+    restart: unless-stopped
+    networks:
+      - smo-network
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: smo-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - engine-service
+    restart: unless-stopped
+    networks:
+      - smo-network
+
+networks:
+  smo-network:
+    driver: bridge
